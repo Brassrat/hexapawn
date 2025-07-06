@@ -1,14 +1,29 @@
-let turn = 0;
-let pos = ["GHI", "ABC"]
-let dragEl;
-let snapshot;
-let badIdeas = [];
-let points = [0,0];
+const upperLeft = 'A'.codePointAt(0);
+const human = 0;
+const computer = 1;
+const computerRow = [];
+const humanRow = [];
+const allCells = [];
+const pos = ["", ""]
+const rootElement = document.documentElement;
 document.onmouseup = drop
 document.ontouchend = drop
+const badIdeas = {};
+const points = [0,0];
+let turn = 0;
+let width = 3;
+rootElement.style.setProperty('--width', width.toString());
+let height = 3;
+rootElement.style.setProperty('--height', height.toString());
+let dragEl;
+let snapshot = "";
+let needInit = true;
+initDocument()
+initialize()
 draw();
+let useSW = true;
 
-if ('serviceWorker' in navigator) {
+if (useSW && ('serviceWorker' in navigator)) {
     navigator.serviceWorker.register('sw.js', {
         scope: '/hexapawn/'
     }).then(function (reg) {
@@ -27,13 +42,110 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+function positionPawn(ii) {
+    let pawn = String.fromCodePoint(upperLeft + ii);
+    let styleElement = document.getElementById(pawn + '-style');
+    if (!styleElement) {
+        styleElement = document.createElement('style');
+        styleElement.id = pawn + '-style';
+        document.head.appendChild(styleElement);
+    }
+    let styleSheet = styleElement.sheet;
+    while (styleSheet.cssRules.length > 0) {
+        styleSheet.deleteRule(0);
+    }
+    const row = Math.trunc(ii / width);
+    const col = ii % width;
+    const top = `calc((100% / var(--height)) * ${row}.15)`;
+    const left = `calc((100% / var(--width)) * ${col}.15)`;
+    let cssRule = `
+#winnerspot.${pawn}:before,
+.allow.${pawn},
+.notallow.${pawn},
+#${pawn}.pawn {
+  width: calc((100% / var(--width)) * .7);
+  height: calc((100% / var(--height)) * .7);
+  left: ${left};
+  top: ${top};
+}
+`
+    styleSheet.insertRule(cssRule, styleSheet.cssRules.length); // Adds to the end
+    cssRule = `
+.allow.${pawn},
+.notallow.${pawn} {
+  width: calc((100% / var(--width)) - 4px);
+  height: calc((100% / var(--height)) - 4px);
+}
+`
+    styleSheet.insertRule(cssRule, styleSheet.cssRules.length); // Adds to the end
+}
 
+function initDocument() {
+
+    const wPct = 100.000 / width; //'33.333'
+    const hPct = 100.000 / height; //'33.333'
+    let back = `body {
+        background-image: `;
+    let vert = 'linear-gradient(90deg,';
+    /* vertical lines */
+    for (let pct = wPct ; pct < 99; pct += wPct) {
+        vert += '\n    ' + `transparent calc(${pct}% - 2px),`;
+        vert += '\n    ' + `var(--c1) ${pct}%,`;
+        vert += '\n    ' + `transparent calc(${pct}% + 2px)`;
+        vert += (pct + wPct < 99) ? ',' : ')';
+    }
+    back += vert;
+    /* horizontal lines */
+    back += ',\n';
+    let horz = 'linear-gradient(0deg,';
+    for (pct = hPct ; pct < 99; pct += hPct) {
+        horz += '\n    ' + `transparent calc(${pct}% - 2px),`;
+        horz += '\n    ' + `var(--c1) ${pct}%,`;
+        horz += '\n    ' + `transparent calc(${pct}% + 2px)`;
+        horz += ((pct + hPct) < 99) ? ',' : ')';
+    }
+    back += horz;
+    back += `;
+    }
+    `
+    const styleElement = document.createElement('style');
+    document.head.appendChild(styleElement);
+    styleSheet = styleElement.sheet;
+    styleSheet.insertRule(back, styleSheet.cssRules.length); // Adds to the end
+    for ( let ii = 0; ii < height * width; ii++ ) {
+        positionPawn(ii)
+    }
+}
+function initialize() {
+    turn = 0;
+    computerRow.length = 0;
+    humanRow.length = 0;
+    allCells.length = 0;
+    for ( let i = 0; i < height * width; i++ ) {
+        allCells.push(String.fromCodePoint(upperLeft + i))
+    }
+    pos[0] = "";
+    pos[1] = "";
+    for ( let i = 0; i < width; i++ ) {
+        let computerPawn = String.fromCodePoint(upperLeft + i); // ABC
+        computerRow.push(computerPawn);
+        pos[computer] = pos[computer] + computerPawn;
+        let humanPawn = String.fromCodePoint(upperLeft + ((height -1) * width) + i);
+        humanRow.push(humanPawn);
+        pos[human] = pos[human] + humanPawn;
+    }
+}
 
 function draw() {
-    pos[0] = pos[0].split('').sort().join('');
-    pos[1] = pos[1].split('').sort().join('');
-    humanPawns = pos[0].split('');
-    cumputerPawns = pos[1].split('');
+    if (needInit) {
+        needInit = false;
+        initDocument();
+        initialize();
+    }
+    pos[human] = pos[human].split('').sort().join('');
+    pos[computer] = pos[computer].split('').sort().join('');
+    const humanPawns = pos[human].split('');
+    const cumputerPawns = pos[computer].split('');
     document.body.innerHTML = "";
     cumputerPawns.forEach(pawn => {
         document.body.insertAdjacentHTML("beforeend", `<div id="${pawn}" class="pawn computer"></div>`);
@@ -41,6 +153,55 @@ function draw() {
     humanPawns.forEach(pawn => {
         document.body.insertAdjacentHTML("beforeend", `<div id="${pawn}" class="pawn human" onmousedown="drag(this)" ontouchstart="drag(this)"></div>`);
     })
+
+    document.body.insertAdjacentHTML('beforeend', `
+        <div id="size">
+          <ul id="sizes">
+            <li>
+              <label for="width">W:</label>
+              <input type="number" id="width" name="width" value="${width}" min="3" max="7"/>
+            </li>
+            <li>
+              <label for="height">H:</label>
+              <input type="number" id="height" name="height" value="${height}" min="3" max="7"/>
+            </li>
+          </ul>
+        </div>
+    `);
+    document.getElementById('width').addEventListener('input', (event) => {
+        const input = document.getElementById("width");
+        if (input !== null) {
+            const oldWidth = width;
+            width = +input.value;
+            if (width * height > 26) {
+                // only 26 pawns are allowed due to naming scheme
+                width = Math.trunc(26 / height);
+                input.value = width.toString();
+            }
+            document.documentElement.style.setProperty('--width', width.toString());
+            needInit = (width !== oldWidth);
+            if (needInit) {
+                draw();
+            }
+        }
+    });
+    document.getElementById('height').addEventListener('input', (event) => {
+        const input = document.getElementById("height");
+        if (input !== null) {
+            const oldHeight = height;
+            height = +input.value;
+            if (width * height > 26) {
+                // only 26 pawns are allowed due to naming scheme
+                height = Math.trunc(26 / width);
+                input.value = height.toString();
+            }
+            document.documentElement.style.setProperty('--height', height.toString());
+            needInit = (height !== oldHeight);
+            if (needInit) {
+                draw();
+            }
+        }
+    });
     document.body.insertAdjacentHTML("beforeend", `<div id="points"><span>${points[0]}</span><span>${points[1]}</span></div>`);
     document.body.insertAdjacentHTML("beforeend", `
         <ul class="links">
@@ -52,7 +213,7 @@ function draw() {
 
     turn++
     document.body.classList.remove('human', 'computer')
-    document.body.classList.add(`${turn %2 == 0 && turn > 1 ?  'computer':  'human'}`)
+    document.body.classList.add(`${turn % 2 ? 'human' : 'computer'}`)
     setTimeout(() => {
         isWon();
     }, 500);
@@ -64,11 +225,11 @@ function drag(el) {
     document.body.ontouchmove = sticker;
     el.classList.add('drag')
     function sticker(e) {
-        isAllow(el.id, e, undefined)[0] ?
-            (document.querySelectorAll(`.allow.${isAllow(el.id, e ,undefined)[1]}`).length > 0 ? '' :
-                (document.querySelectorAll('.allow').forEach(el => el.remove()), document.body.insertAdjacentHTML('beforeend', `<div class="allow ${isAllow(el.id, e)[1]}"></div>`))) :
-            (document.querySelectorAll('.allow').length > 0 ?
-                document.querySelectorAll('.allow').forEach(el => el.remove()) : '');
+        const elAllowed = isAllow(el.id, findTarget(el.id));
+        elAllowed[0] ?
+            (document.querySelectorAll(`.allow.${elAllowed[1]}`).length > 0 ? '' :
+                (document.querySelectorAll('.allow').forEach(el => el.remove()), document.body.insertAdjacentHTML('beforeend', `<div class="allow ${elAllowed[1]}"></div>`))) :
+            document.querySelectorAll('.allow').forEach(el => el.remove());
 
         movePos = e.type === "touchmove" ? [e.changedTouches[0].clientY, e.changedTouches[0].clientX] : [e.pageY, e.pageX];
         el.style.top = movePos[0] - ((window.innerHeight - document.body.offsetHeight) / 2) - (el.offsetWidth / 2)
@@ -77,17 +238,19 @@ function drag(el) {
 }
 
 function drop(e) {
-    if (dragEl != '') {
+    if (dragEl) {
         dragEl.classList.remove('drag')
-        document.body.onmousemove = '';
-        document.body.ontouchmove = '';
-        alw = isAllow(dragEl.id, e)
+        document.body.onmousemove = null;
+        document.body.ontouchmove = null;
+        if (needInit) {
+           draw();
+        }
+        alw = isAllow(dragEl.id, findTarget(dragEl.id));
         if (alw[0]) {
             winnerpos = alw[1];
-            pos[1] = pos[1].replace(alw[1], '');
-            pos[0] = pos[0].replace(dragEl.id, alw[1]);
+            pos[computer] = pos[computer].replace(alw[1], '');
+            pos[human] = pos[human].replace(dragEl.id, alw[1]);
             draw();
-            
         } else {
             document.querySelectorAll('.pawn').forEach(el => el.style = '')
         }
@@ -95,76 +258,53 @@ function drop(e) {
     dragEl = '';
 }
 
-function isAllow(curentId, event, dropTarget) {
+function findTarget(curentId) {
+    const page = event.type.search("touch") >= 0 ? [event.changedTouches[0].pageY, event.changedTouches[0].pageX] : [event.pageY, event.pageX];
+    dropOffset = [
+        page[0] - ((window.innerHeight - document.body.offsetHeight) / 2),
+        page[1] - ((window.innerWidth - document.body.offsetWidth) / 2)
+    ];
+    const hh = document.body.offsetHeight / height;
+    const ww = document.body.offsetWidth / width;
+    const dropPos = [
+        Math.trunc(dropOffset[0] / hh),
+        Math.trunc(dropOffset[1] / ww)
+    ];
+    const xxx = dropPos[0] * width + dropPos[1];
+    const dropTarget = String.fromCodePoint(upperLeft + xxx);
+    //console.log('%s => %s', curentId, dropTarget)
+    return dropTarget;
+}
 
-    if (dropTarget === undefined) {
-        page = event.type.search("touch") >= 0 ? [event.changedTouches[0].pageY, event.changedTouches[0].pageX] : [event.pageY, event.pageX];
-        bodythird = (document.body.offsetHeight / 3)
-        dropPos = [
-            page[0] - ((window.innerHeight - document.body.offsetHeight) / 2),
-            page[1] - ((window.innerWidth - document.body.offsetWidth) / 2)
-        ];
-        dropPos = [
-            dropPos[0] < bodythird ? 1 : (dropPos[0] > bodythird * 2) ? 3 : 2,
-            dropPos[1] < bodythird ? 1 : (dropPos[1] > bodythird * 2) ? 3 : 2
-        ];
-        switch (dropPos.join('')) {
-            case "11":
-                dropTarget = "A";
-                break;
-            case "12":
-                dropTarget = "B";
-                break;
-            case "13":
-                dropTarget = "C";
-                break;
-            case "21":
-                dropTarget = "D";
-                break;
-            case "22":
-                dropTarget = "E";
-                break;
-            case "23":
-                dropTarget = "F";
-                break;
-            case "31":
-                dropTarget = "G";
-                break;
-            case "32":
-                dropTarget = "H";
-                break;
-            case "33":
-                dropTarget = "I";
-                break;
-        }
+function isAllow(curentId, dropTarget) {
+    const tgt = dropTarget.codePointAt(0);
+    const mover = (turn % 2) ? human : computer; // odd turn is human
+    const other = (mover === human) ? computer : human;
+    const from = curentId.codePointAt(0);
+    const tgtRow = from + ((mover === human) ? -width : width);
+    if (tgt === tgtRow) {
+        const occupied = pos[human].includes(dropTarget) || pos[computer].includes(dropTarget)
+        return [!occupied, dropTarget]; // up/down move
     }
-    if (turn % 2 != 0) {
-         allow1 = ["GD", "DA", "HE", "EB", "IF", "FC"]
-         allow2 = ["GE", "HD", "HF", "IE", "DB", "EA", "EC", "FB"]
-        return allow1.includes(curentId + dropTarget) ?
-            (pos[0].includes(dropTarget) || pos[1].includes(dropTarget) ? [false, dropTarget] : [true, dropTarget]) :
-            (allow2.includes(curentId + dropTarget) ? (pos[1].includes(dropTarget) ? [true, dropTarget] : [false, dropTarget]) : [false, dropTarget]);
-
-    } else {
-         allow1 = ["AD", "BE", "CF", "DG", "EH", "FI"]
-         allow2 = ["AE", "BD", "BF", "CE", "DH", "EG", "EI", "FH"]
-        return allow1.includes(curentId + dropTarget) ?
-            (pos[1].includes(dropTarget) || pos[0].includes(dropTarget) ? [false, dropTarget] : [true, dropTarget]) :
-            (allow2.includes(curentId + dropTarget) ? (pos[0].includes(dropTarget) ? [true, dropTarget] : [false, dropTarget]) : [false, dropTarget]);
-
+    const rr = (from - upperLeft) / width;
+    const cc = (from - upperLeft) % width + 1;
+    if (((cc !== 1) && (tgt === (tgtRow - 1))) ||
+        ((cc !== width) && (tgt === (tgtRow + 1)))) {
+        return [pos[other].includes(dropTarget), dropTarget];
     }
+    return [false, dropTarget];
 
 }
 
 function computerMove() {
     setTimeout(() => {
         pMoves = posiblemoves('computer')
-        let possibilities = {};
+        const possibilities = {};
         pMoves.forEach(move => {
-            p = 0;
-            ["G","H","I"].forEach(w => move[1].includes(w) ? p += 2 : '');
-            badIdeas.includes(pos.join('') + move) ? p -= 1 : '';
-            Object.keys(possibilities).includes(p.toString()) ? possibilities[p].push(move) : (possibilities[p] = [], possibilities[p].push(move));
+            //humanRow.forEach(w => move[1] === w ? p += 2 : '');
+            const p = (humanRow.includes(move[1]) ? 2 :
+                 badIdeas[pos.join('') + move] ? -1 : 0).toString()
+            possibilities[p] !== undefined ? possibilities[p].push(move) :                                                possibilities[p] = [move];
         })
         max = -100;
         Object.keys(possibilities).forEach(p => {
@@ -173,14 +313,10 @@ function computerMove() {
         rnd = Math.floor(Math.random() * possibilities[max].length);
         choosen = possibilities[max][rnd]       
         snapshot = pos.join('') + choosen;
-        pos[0] = pos[0].replace(choosen.split('')[1], '');
-        pos[1] = pos[1].replace(choosen.split('')[0], choosen.split('')[1]);
+        pos[human] = pos[human].replace(choosen.split('')[1], '');
+        pos[computer] = pos[computer].replace(choosen.split('')[0], choosen.split('')[1]);
 
         draw();
-        
-
-
-
     }, 500);
 }
 
@@ -188,36 +324,33 @@ function isWon() {
     humanPosibleMoves = posiblemoves('human');
     computerPosibleMoves = posiblemoves('computer');
     winner =
-        turn % 2 === 0 && computerPosibleMoves.length == 0 ? 'human' :
-        turn % 2 != 0 && humanPosibleMoves.length == 0 ? 'computer' :
-        ["A", "B", "C"].some(i => pos[0].includes(i)) ? 'human' :
-        ["G", "H", "I"].some(i => pos[1].includes(i)) ? 'computer' : '';
+        turn % 2 === 0 && computerPosibleMoves.length === 0 ? 'human' :
+        turn % 2 !== 0 && humanPosibleMoves.length === 0 ? 'computer' :
+        computerRow.some(i => pos[human].includes(i)) ? 'human' :
+        humanRow.some(i => pos[computer].includes(i)) ? 'computer' : '';
     if (winner.length > 0) {
-        pos = ["GHI", "ABC"];
-        turn = 0;
-        
         winner === 'computer' ?
         (winnerpos = snapshot[snapshot.length - 1], snapshot = '', points[0]++):
-        (badIdeas.push(snapshot), snapshot = '', points[1]++);
-        
+        (badIdeas[snapshot] = true, snapshot = '', points[1]++);
+
         alerter(winner.toUpperCase() + ' WON!')
         document.body.insertAdjacentHTML('afterBegin', `<div id="winnerspot" class="${winner} ${winnerpos}"></div>`)
-        
-    }else{
+        initialize()
+    }
+    else {
        if (turn % 2 === 0) computerMove()
     }
-
-
-
 }
 
 function posiblemoves(player) {
-    player = player === 'human' ? pos[0] : pos[1];
+    const positions = player === 'human' ? pos[human] : pos[computer];
     pms = [];
-    pm = player.split('').map(m => {
-        let d = [];
-        ["A", "B", "C", "D", "E", "F", "G", "H", "I"].forEach(p => {
-            if (isAllow(m, undefined, p)[0] === true) d.push((m + isAllow(m, undefined, p)[1]).toString())
+    pm = positions.split('').map(m => {
+        const d = [];
+        allCells.forEach(p => {
+            if (isAllow(m, p)[0]) {
+                d.push((m + isAllow(m, p)[1]))
+            }
         })
         return d
     })
@@ -230,7 +363,6 @@ function posiblemoves(player) {
         })
     })
     return pms
-
 }
 
 function alerter(text) {
